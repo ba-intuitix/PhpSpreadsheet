@@ -36,6 +36,9 @@ class XLookup extends LookupBase
             return self::evaluateArrayArgumentsIgnore([self::class, __FUNCTION__], [1,2], $lookupValue, $lookupArray, $returnArray, $ifNotFound, $matchMode, $searchMode);
         }
 
+        // Horizontal or vertical lookup
+        $horizontalLookup = false;
+
         try {
             // Validate both arrays are actually arrays
             self::validateLookupArray($lookupArray);
@@ -46,10 +49,16 @@ class XLookup extends LookupBase
             $returnArray = array_values($returnArray);
 
             // Find the dimensions of the lookupArray - if only a single row, then that becomes the lookup array
-            if (count($lookupArray) === 1)
+            // Also remove the keys from 
+            if ($horizontalLookup = (count($lookupArray) === 1))
                 $lookupArray = array_values($lookupArray[0]);
             else // otherwise, trim to just the first column values
                 $lookupArray = array_map([self::class, 'xLookupTrimArray'], $lookupArray);
+
+            // returnArray has to be compatible with lookupArray i.e. same length in the correct dimension
+            if (($horizontalLookup && count($returnArray[0]) !== count($lookupArray)) ||
+                (!$horizontalLookup && count($returnArray) !== count($lookupArray)))
+                return ExcelError::VALUE();
 
         } catch (Exception $e) {
             return ExcelError::REF();
@@ -64,13 +73,8 @@ class XLookup extends LookupBase
 
         $returnIndex = self::xLookupSearch($lookupValue, $lookupArray, $matchMode);
 
-        if ($returnIndex !== null) {
-            if ($returnIndex >= count($returnArray))
-                return ExcelError::VALUE();
-
-            // return the appropriate value
-            return self::xLookupImplodeArray($returnArray[$returnIndex]);
-        }
+        if ($returnIndex !== null)
+            return self::xLookupFindIndexAndImplodeArray($returnArray, $returnIndex, $horizontalLookup);
         else if (is_string($ifNotFound) || is_numeric($ifNotFound))
             return $ifNotFound;
 
@@ -81,16 +85,23 @@ class XLookup extends LookupBase
     {
         if (is_array($arrayEl))
             return count($arrayEl) ? array_values($arrayEl)[0] : null;
-            
+
         return $arrayEl;
     }
 
-    private static function xLookupImplodeArray(mixed $arrayOrString)
+    private static function xLookupFindIndexAndImplodeArray(array $returnArray, int $returnIndex, bool $horizontalMode)
     {
-        if (is_array($arrayOrString))
-            return implode(", ", $arrayOrString);
+        if (!$horizontalMode)
+            $result = $returnArray[$returnIndex];
+        else
+        {
+            $result = array_reduce($returnArray, function($carry, $item) use ($returnIndex) {
+                $carry[] = array_values($item)[$returnIndex];
+                return $carry;
+            }, []);
+        }
 
-        return $arrayOrString;
+        return is_array($result) ? implode(", ", $result) : $result;
     }
 
     private static function vlookupSort(array $a, array $b): int
@@ -110,8 +121,9 @@ class XLookup extends LookupBase
     /**
      * @param mixed $lookupValue The value that you want to match in lookup_array
      * @param array $lookupArray
+     * @param int $matchMode
      */
-    private static function xLookupSearch($lookupValue, array $lookupArray, int $matchMode): ?int
+    private static function xLookupSearch(mixed $lookupValue, array $lookupArray, int $matchMode): ?int
     {
         $lookupLower = StringHelper::strToLower((string) $lookupValue);
 
@@ -125,22 +137,34 @@ class XLookup extends LookupBase
             if ($bothNumeric || $bothNotNumeric)
             {
                 // EXACT MATCH
-                if ($cellDataLower === $lookupLower)
+                if ($cellDataLower == $lookupLower)
                 {
                     $returnIndex = $lookupIndex;
                     break;
                 }
-                else if ($matchMode !== self::MATCH_MODE_EXACT && $returnIndex === null)
-                    $returnIndex = $lookupIndex;
-                else if ($returnIndex !== null &&
-                    ($matchMode === self::MATCH_MODE_EXACT_OR_SMALLER &&
-                    $cellDataLower < $lookupLower &&
-                    $cellDataLower > $lookupArray[$returnIndex]) ||
-                    ($matchMode === self::MATCH_MODE_EXACT_OR_LARGER &&
-                    $cellDataLower > $lookupLower &&
-                    $cellDataLower < $lookupArray[$returnIndex])
-                )
-                    $returnIndex = $lookupIndex;
+                else if ($matchMode === self::MATCH_MODE_EXACT_OR_SMALLER)
+                {
+                    if ($cellDataLower < $lookupLower &&
+                        ($returnIndex === null || $cellDataLower > $lookupArray[$returnIndex]))
+                        $returnIndex = $lookupIndex;
+                }
+                else if ($matchMode === self::MATCH_MODE_EXACT_OR_LARGER)
+                {
+                    if ($cellDataLower > $lookupLower &&
+                        ($returnIndex === null || $cellDataLower < $lookupArray[$returnIndex]))
+                        $returnIndex = $lookupIndex;
+                }
+                // else if ($matchMode !== self::MATCH_MODE_EXACT && $returnIndex === null)
+                //     $returnIndex = $lookupIndex;
+                // else if ($returnIndex !== null &&
+                //     ($matchMode === self::MATCH_MODE_EXACT_OR_SMALLER &&
+                //     $cellDataLower < $lookupLower &&
+                //     $cellDataLower > $lookupArray[$returnIndex]) ||
+                //     ($matchMode === self::MATCH_MODE_EXACT_OR_LARGER &&
+                //     $cellDataLower > $lookupLower &&
+                //     $cellDataLower < $lookupArray[$returnIndex])
+                // )
+                //     $returnIndex = $lookupIndex;
             }
         }
 

@@ -13,11 +13,13 @@ class XLookupTest extends TestCase
      *
      * @param mixed $expectedResult
      * @param mixed $value
-     * @param mixed $table 
-     * @param mixed $lookup
-     * @param mixed $return
+     * @param mixed $table
+     * @param mixed $lookupArray
+     * @param mixed $returnArray
+     * @param mixed $table
+     * @param mixed $table
      */
-    public function testXLOOKUP($expectedResult, $value, $table, $lookup, $return): void
+    public function testXLOOKUP($expectedResult, $value, $table, $lookupArray, $returnArray, $ifNotFound = '', $matchMode = '', $searchMode = ''): void
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -28,7 +30,19 @@ class XLookupTest extends TestCase
 
         $sheet->getCell('Z98')->setValue($value);
 
-        $sheet->getCell('Z99')->setValue("=XLOOKUP(Z98,$lookup,$return)");
+        $formula = "=XLOOKUP(Z98,$lookupArray,$returnArray";
+        if ($ifNotFound !== '')
+        {
+            $formula .= is_string($ifNotFound) ? (',"' . $ifNotFound . '"') : ",$ifNotFound";
+            if ($matchMode !=='')
+            {
+                $formula .= ",$matchMode";
+                if ($searchMode !== '')
+                    $formula .= ",$searchMode";
+            }
+        }
+
+        $sheet->getCell('Z99')->setValue("$formula)");
         $result = $sheet->getCell('Z99')->getCalculatedValue();
         self::assertEquals($expectedResult, $result);
         $spreadsheet->disconnectWorksheets();
