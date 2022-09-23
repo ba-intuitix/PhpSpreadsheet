@@ -115,18 +115,31 @@ trait ArrayEnabled
      *         HLOOKUP() and VLOOKUP(), where argument 1 is a matrix that needs to be treated as a database
      *                                  rather than as an array argument.
      *
+     * @param int|array $ignore
      * @param mixed ...$arguments
      */
-    protected static function evaluateArrayArgumentsIgnore(callable $method, int $ignore, ...$arguments): array
+    protected static function evaluateArrayArgumentsIgnore(callable $method, int|array $ignore, ...$arguments): array
     {
-        $leadingArguments = array_slice($arguments, 0, $ignore);
-        $ignoreArgument = array_slice($arguments, $ignore, 1);
-        $trailingArguments = array_slice($arguments, $ignore + 1);
+        $ignoredArguments = $nonIgnoredArguments = [];
+        foreach ($arguments as $index => $argument)
+        {
+            if ((is_int($ignore) && $index == $ignore) ||
+                (is_array($ignore) && in_array($index, $ignore)))
+            {
+                $ignoredArguments[$index] = $argument;
+                $nonIgnoredArguments[$index] = [null];
+            }
+            else
+                $nonIgnoredArguments[$index] = $argument;
+        }
 
-        self::initialiseHelper(array_merge($leadingArguments, [[null]], $trailingArguments));
+        self::initialiseHelper($nonIgnoredArguments);
         $arguments = self::$arrayArgumentHelper->arguments();
 
-        array_splice($arguments, $ignore, 1, $ignoreArgument);
+        foreach ($ignoredArguments as $index => $ignoredArgument)
+        {
+            $arguments[$index] = $ignoredArgument;
+        }
 
         return ArrayArgumentProcessor::processArguments(self::$arrayArgumentHelper, $method, ...$arguments);
     }
